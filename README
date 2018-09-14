@@ -1,0 +1,222 @@
+# meta-rpi
+
+********************************************************************************
+Setup
+********************************************************************************
+
+Install the required packages.
+--------------------------------------------------------------------------------
+sudo apt install build-essential chrpath diffstat gawk libncurses5-dev texinfo pv
+--------------------------------------------------------------------------------
+
+
+Reconfigure the default shell from dash to bash.  Select No at the prompt.
+--------------------------------------------------------------------------------
+sudo dpkg-reconfigure dash
+--------------------------------------------------------------------------------
+
+
+Create an rpi build directory.
+--------------------------------------------------------------------------------
+mkdir -p ~/dev/yocto/rpi/build
+--------------------------------------------------------------------------------
+
+
+Clone the required repositories.
+--------------------------------------------------------------------------------
+cd ~/dev/yocto/rpi
+git clone https://github.com/dwrank/meta-rpi.git
+ 
+cd ~/dev/yocto
+git clone -b sumo git://git.yoctoproject.org/poky.git poky-sumo
+ 
+cd poky-sumo
+git clone -b sumo git://git.openembedded.org/meta-openembedded
+git clone -b sumo git://git.yoctoproject.org/meta-raspberrypi
+--------------------------------------------------------------------------------
+
+
+Initialize the build directory.
+--------------------------------------------------------------------------------
+cd poky-sumo
+source oe-init-build-env ~/dev/yocto/rpi/build
+--------------------------------------------------------------------------------
+
+
+Configure the build
+--------------------------------------------------------------------------------
+cd ~/dev/yocto/rpi/build
+cp ~/dev/yocto/rpi/meta-rpi/build-conf/* conf/.
+--------------------------------------------------------------------------------
+
+
+Make sure the paths in conf/bblayers.conf are correct.
+
+In conf/local.conf, set the paths for DL_DIR, CUSTOM_FILES_DIR, and the IP for PACKAGE_FEED_URIS.
+    (See the section on hosting a package feed below)
+
+
+Some useful aliases:
+--------------------------------------------------------------------------------
+alias initrpi="cd ~/dev/yocto/poky-sumo; source oe-init-build-env ~/dev/yocto/rpi/build"
+alias cdrpoky="cd ~/dev/yocto/poky-sumo"
+alias cdrpi="cd ~/dev/yocto/rpi"
+alias cdrpi="cd ~/dev/yocto/rpi/meta-rpi"
+alias cdscripts="cd ~/dev/yocto/rpi/meta-rpi/scripts"
+alias cdfiles="cd ~/dev/yocto/rpi/files"
+alias cdwork="cd ~/dev/yocto/rpi/build/tmp/work/cortexa7hf-neon-vfpv4-poky-linux-gnueabi"
+alias cddeploy="cd ~/dev/yocto/rpi/build/tmp/deploy"
+alias cdrfs="cd ~/dev/yocto/rpi/build/tmp/work/raspberrypi3-poky-linux-gnueabi/rpi-dev/1.0-r0/rootfs"
+alias cdimg="cd ~/dev/yocto/rpi/build/tmp/deploy/images/raspberrypi3"
+--------------------------------------------------------------------------------
+
+********************************************************************************
+Build and flash
+********************************************************************************
+
+You may need to add your ssh key to the ssh-agent if you are getting a permission denied error while fetching from our ssh git repo.
+--------------------------------------------------------------------------------
+eval "$(ssh-agent -s)"
+ssh-add -k ~/.ssh/id_rsa
+--------------------------------------------------------------------------------
+
+
+Show custom images to build and build a development image.
+--------------------------------------------------------------------------------
+bitbake-layers show-recipes "rpi-*"
+bitbake rpi-dev
+--------------------------------------------------------------------------------
+
+
+Rebuild if a configuration has changed.
+--------------------------------------------------------------------------------
+bitbake -c do_clean rpi-dev
+bitbake rpi-dev
+--------------------------------------------------------------------------------
+
+
+Find the micro sd card device (e.g. /dev/sdc) and write the image to the micro sd card.  Unmount the sd card if it is mounted.
+--------------------------------------------------------------------------------
+lsblk
+cd build/tmp/deploy/images/raspberrypi3
+ls -l *sdimg
+dd if=rpi-dev-raspberrypi3.rpi-sdimg of=/dev/sdc bs=4M
+--------------------------------------------------------------------------------
+
+********************************************************************************
+View the build history
+********************************************************************************
+
+View the build history git logs.
+--------------------------------------------------------------------------------
+cd ~/dev/yocto/rpi/build/buildhistory
+gitk
+--------------------------------------------------------------------------------
+
+
+View the packages and files included in the image.
+--------------------------------------------------------------------------------
+cd ~/dev/yocto/rpi/build/buildhistory/images/raspberrypi3/glibc/rpi-dev
+vim files-in-image.txt
+vim installed-packages.txt
+vim installed-package-names.txt
+--------------------------------------------------------------------------------
+
+
+View the packages built.
+--------------------------------------------------------------------------------
+cd ~/dev/yocto/rpi/build/tmp/deploy/deb
+--------------------------------------------------------------------------------
+
+
+View a package's details.
+--------------------------------------------------------------------------------
+cd ~/dev/yocto/rpi/build/buildhistory/packages/cortexa7hf-neon-vfpv4-poky-linux-gnueabi/apt
+cat latest
+cd apt
+cat files-in-package.txt
+--------------------------------------------------------------------------------
+
+
+Show the location of the rootfs.
+--------------------------------------------------------------------------------
+bitbake -e rpi-dev | grep ^IMAGE_ROOTFS=
+--------------------------------------------------------------------------------
+
+********************************************************************************
+Login to the rpi
+********************************************************************************
+
+Login with root and no password or with user pi, password pi.
+
+To SSH using the ssh keys, copy the generated root ssh keys to your .ssh directory.
+--------------------------------------------------------------------------------
+cp ~/dev/yocto/rpi/build/tmp/deploy/keys ~/.ssh/. ssh root@<rpi ip address>
+--------------------------------------------------------------------------------
+
+********************************************************************************
+Connect to the network with wifi
+********************************************************************************
+
+Add the wifi credentials and bring up the interface.
+--------------------------------------------------------------------------------
+wpa_passphrase <access point> <wpa passphrase> >> /etc/wpa_supplicant.conf
+ifup wlan0
+--------------------------------------------------------------------------------
+
+********************************************************************************
+Host a package feed and install packages with apt-get
+********************************************************************************
+
+On the build machine, edit the package feed settings in the rpi-dev image recipe (~/dev/yocto/rpi/meta-rpi/images/rpi-dev.bb) and rebuild, or else edit them on the rpi in /etc/apt/sources.list.
+
+On the build machine, create the package index and host the package feed (repository).
+--------------------------------------------------------------------------------
+bitbake package-index
+cd ~/dev/yocto/rpi/build/tmp/deploy
+python -m SimpleHTTPServer 5678
+--------------------------------------------------------------------------------
+
+
+On the rpi install a package (e.g. python3)
+--------------------------------------------------------------------------------
+apt-get update
+apt-get install python3
+--------------------------------------------------------------------------------
+
+
+Add new packages to the package repository:
+
+On the build machine, list available recipes.
+--------------------------------------------------------------------------------
+bitbake-layers show-recipes
+--------------------------------------------------------------------------------
+
+
+Build packages (e.g. ethtool) and update the package index.
+--------------------------------------------------------------------------------
+bitbake ethtool
+bitbake package-index
+--------------------------------------------------------------------------------
+
+
+Resynchronize the package index on the target, search for packages, and install the new packages.
+--------------------------------------------------------------------------------
+apt-get update
+ 
+apt-cache search ethtool
+apt-cache pkgnames | grep ethtool
+ 
+apt-get install ethtool ctags
+--------------------------------------------------------------------------------
+
+
+********************************************************************************
+Troubleshooting
+********************************************************************************
+
+Sometimes a package will fail to build, and may be resolved by cleaning and rebuilding.
+--------------------------------------------------------------------------------
+bitbake <pkg> -c do_clean
+bitbake <pkg>
+--------------------------------------------------------------------------------
